@@ -7,10 +7,9 @@ from trial.revisions import TrialRevision
 def calibrate_revision(repository: TrialRepository, revision: TrialRevision) -> CalibratedCurve:
     calibration = load_calibration(repository, revision.calibration_id)
     samples = revision.samples
-    duration = samples[-1].time - samples[0].time
-    step = duration / (len(samples) - 1)
+    origin = samples[0].time
     knots = tuple(
-        CurveKnot(index * step, calibration.apply(sample.reading))
-        for index, sample in enumerate(samples)
+        CurveKnot(sample.time - origin, calibration.apply(sample.reading))
+        for sample in samples
     )
     return CalibratedCurve(knots)

@@ -1,6 +1,7 @@
 from fractions import Fraction
 
 from intake.receipts import accept_curve
+from intake.validation import validate_curve_body
 from report.readback import read_report
 from tests.support import A_PROFILE, B_PROFILE, LedgerCase, legal_wire
 
@@ -80,3 +81,37 @@ class AlignmentTests(LedgerCase):
         self.source.close()
         self.assertEqual(self.publish(left_id, right_id, '299/100')[0].verdict, 'retest')
         self.assertEqual(self.publish(left_id, right_id, 3)[0].verdict, 'equivalent')
+
+    def test_real_seconds_not_resampling_phase(self):
+        # Both curves start together; re-spacing each sample list onto unit phases
+        # calls them comparable at any tolerance.  In real seconds a 2 s ramp ends at
+        # 21 while the early curve has already held 21 for a second, so the only
+        # rate-compatible path forces a gap larger than 1/2 °C at the start.
+        ramp = legal_wire('ramp-A', 'A', 'rev-A', ((0, 20), (2, 21)))
+        early = legal_wire('early-B', 'B', 'rev-B', ((0, 20), (1, 21), (4, 21)))
+        self.source.close()
+        ramp_id = accept_curve(self.catalog, ramp)
+        early_id = accept_curve(self.catalog, early)
+        self.assertEqual(self.publish(ramp_id, early_id, 0)[0].verdict, 'retest')
+        self.assertEqual(self.publish(ramp_id, early_id, '1/2')[0].verdict, 'retest')
+        self.assertEqual(self.publish(early_id, ramp_id, '1/2')[0].verdict, 'retest')
+        self.assertEqual(self.publish(ramp_id, early_id, '3/4')[0].verdict, 'equivalent')
+
+    def test_interior_knots_keep_their_elapsed_times(self):
+        # A shoulder at 3 s followed by a hold to 4 s must be preserved: the second
+        # knot keeps its real elapsed time instead of being re-spaced onto phase 1/2.
+        package = self.issue_pair(A_PROFILE, B_PROFILE)[1]
+        curve = validate_curve_body(package.body)
+        self.assertEqual([knot.time for knot in curve.knots], [0, 3, 4])
+        self.assertEqual([segment.end.time - segment.start.time for segment in curve.segments()], [3, 1])
+
+    def test_resampling_preserves_zero_tolerance(self):
+        # The same piecewise-linear history sampled at different extra instants must
+        # stay equivalent at zero tolerance; each added knot lies on the old segment.
+        coarse = legal_wire('coarse-A', 'A', 'rev-A', ((0, 20), (1, 21), (4, 21)))
+        dense = legal_wire('dense-B', 'B', 'rev-B', ((0, 20), (1, 21), (2, 21), (4, 21)))
+        self.source.close()
+        coarse_id = accept_curve(self.catalog, coarse)
+        dense_id = accept_curve(self.catalog, dense)
+        self.assertEqual(self.publish(coarse_id, dense_id, 0)[0].verdict, 'equivalent')
+        self.assertEqual(self.publish(dense_id, coarse_id, 0)[0].verdict, 'equivalent')
