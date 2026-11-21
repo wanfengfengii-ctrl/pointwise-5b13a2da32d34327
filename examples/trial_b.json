@@ -1,0 +1,7 @@
+{
+  "trial_id": "trial-B",
+  "probe_id": "reference-B",
+  "calibration": {"scale": "1/2", "offset": "-1/2"},
+  "samples": [[7, 41], [10, 43], [11, 43]],
+  "amendment_samples": [[7, 41], [9, 43], [11, 43]]
+}
